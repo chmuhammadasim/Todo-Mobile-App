@@ -1,6 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-  <receiver android:name="me.carda.notifications.notifications.NotificationReceiver" android:exported="true"/>
-  <service android:name="me.carda.notifications.services.NotificationService" android:exported="true"/>
+
     <application
         android:label="todomobileapp"
         android:name="${applicationName}"
