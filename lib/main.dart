@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:intl/intl.dart';
+import 'package:timezone/data/latest.dart' as tz;
+import 'package:timezone/timezone.dart' as tz;
 
 void main() {
+  tz.initializeTimeZones();
   runApp(const MyApp());
 }
 
@@ -10,10 +13,10 @@ class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
   @override
-  _MyAppState createState() => _MyAppState();
+  MyAppState createState() => MyAppState();
 }
 
-class _MyAppState extends State<MyApp> {
+class MyAppState extends State<MyApp> {
   ThemeMode _themeMode = ThemeMode.system;
 
   void _toggleThemeMode() {
@@ -48,10 +51,10 @@ class TodoListScreen extends StatefulWidget {
   const TodoListScreen({super.key, required this.toggleThemeMode});
 
   @override
-  _TodoListScreenState createState() => _TodoListScreenState();
+  TodoListScreenState createState() => TodoListScreenState();
 }
 
-class _TodoListScreenState extends State<TodoListScreen>
+class TodoListScreenState extends State<TodoListScreen>
     with TickerProviderStateMixin {
   final List<TodoItem> _todos = [];
   final TextEditingController _todoController = TextEditingController();
@@ -87,12 +90,15 @@ class _TodoListScreenState extends State<TodoListScreen>
     if (_todoController.text.isNotEmpty) {
       showDateTimePicker(context).then((selectedDateTime) {
         if (selectedDateTime != null) {
-          setState(() {
-            _todos.add(TodoItem(_todoController.text, selectedDateTime));
-            _todoController.clear();
-          });
-          _controller.forward();
-          _showNotification();
+          if (mounted) {
+            setState(() {
+              final newTodo = TodoItem(_todoController.text, selectedDateTime);
+              _todos.add(newTodo);
+              _todoController.clear();
+            });
+            _controller.forward();
+            _scheduleNotification(_todoController.text, selectedDateTime);
+          }
         }
       });
     }
@@ -116,22 +122,28 @@ class _TodoListScreenState extends State<TodoListScreen>
     return DateTime(date.year, date.month, date.day, time.hour, time.minute);
   }
 
-  void _showNotification() async {
-    const AndroidNotificationDetails androidNotificationDetails =
-        AndroidNotificationDetails(
+  void _scheduleNotification(String title, DateTime scheduledTime) async {
+    final tzScheduledTime = tz.TZDateTime.from(scheduledTime, tz.local);
+
+    const androidDetails = AndroidNotificationDetails(
       'your_channel_id',
       'your_channel_name',
       channelDescription: 'your_channel_description',
       importance: Importance.max,
       priority: Priority.high,
     );
-    const NotificationDetails notificationDetails =
-        NotificationDetails(android: androidNotificationDetails);
-    await _flutterLocalNotificationsPlugin.show(
+
+    const notificationDetails = NotificationDetails(android: androidDetails);
+
+    await _flutterLocalNotificationsPlugin.zonedSchedule(
       0,
-      'New To-Do Item Added',
-      'You have added a new to-do item.',
+      'Task Due: $title',
+      'The task "$title" is due now.',
+      tzScheduledTime,
       notificationDetails,
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
     );
   }
 
