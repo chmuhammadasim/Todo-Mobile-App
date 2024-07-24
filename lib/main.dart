@@ -1,12 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:intl/intl.dart';
 
 void main() {
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  _MyAppState createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  ThemeMode _themeMode = ThemeMode.system;
+
+  void _toggleThemeMode() {
+    setState(() {
+      _themeMode =
+          _themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -15,24 +30,35 @@ class MyApp extends StatelessWidget {
       title: 'To-Do App',
       theme: ThemeData(
         primarySwatch: Colors.blue,
+        brightness: Brightness.light,
       ),
-      home: const TodoListScreen(),
+      darkTheme: ThemeData(
+        brightness: Brightness.dark,
+        primarySwatch: Colors.blue,
+      ),
+      themeMode: _themeMode,
+      home: TodoListScreen(toggleThemeMode: _toggleThemeMode),
     );
   }
 }
 
 class TodoListScreen extends StatefulWidget {
-  const TodoListScreen({super.key});
+  final VoidCallback toggleThemeMode;
+
+  const TodoListScreen({super.key, required this.toggleThemeMode});
 
   @override
   _TodoListScreenState createState() => _TodoListScreenState();
 }
 
-class _TodoListScreenState extends State<TodoListScreen> {
-  final List<String> _todos = [];
+class _TodoListScreenState extends State<TodoListScreen>
+    with TickerProviderStateMixin {
+  final List<TodoItem> _todos = [];
   final TextEditingController _todoController = TextEditingController();
   final FlutterLocalNotificationsPlugin _flutterLocalNotificationsPlugin =
       FlutterLocalNotificationsPlugin();
+  late AnimationController _controller;
+  late Animation<Offset> _offsetAnimation;
 
   @override
   void initState() {
@@ -43,16 +69,51 @@ class _TodoListScreenState extends State<TodoListScreen> {
       iOS: DarwinInitializationSettings(),
     );
     _flutterLocalNotificationsPlugin.initialize(initializationSettings);
+
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 500),
+      vsync: this,
+    );
+    _offsetAnimation = Tween<Offset>(
+      begin: const Offset(0.0, 1.0),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeInOut,
+    ));
   }
 
   void _addTodo() {
     if (_todoController.text.isNotEmpty) {
-      setState(() {
-        _todos.add(_todoController.text);
-        _todoController.clear();
+      showDateTimePicker(context).then((selectedDateTime) {
+        if (selectedDateTime != null) {
+          setState(() {
+            _todos.add(TodoItem(_todoController.text, selectedDateTime));
+            _todoController.clear();
+          });
+          _controller.forward();
+          _showNotification();
+        }
       });
-      _showNotification();
     }
+  }
+
+  Future<DateTime?> showDateTimePicker(BuildContext context) async {
+    DateTime? date = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2101),
+    );
+    if (date == null) return null;
+
+    TimeOfDay? time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.now(),
+    );
+    if (time == null) return null;
+
+    return DateTime(date.year, date.month, date.day, time.hour, time.minute);
   }
 
   void _showNotification() async {
@@ -83,6 +144,7 @@ class _TodoListScreenState extends State<TodoListScreen> {
   @override
   void dispose() {
     _todoController.dispose();
+    _controller.dispose();
     super.dispose();
   }
 
@@ -91,6 +153,12 @@ class _TodoListScreenState extends State<TodoListScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('To-Do List'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.brightness_6),
+            onPressed: widget.toggleThemeMode,
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -117,14 +185,19 @@ class _TodoListScreenState extends State<TodoListScreen> {
             child: ListView.builder(
               itemCount: _todos.length,
               itemBuilder: (context, index) {
-                return Card(
-                  margin:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  child: ListTile(
-                    title: Text(_todos[index]),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete),
-                      onPressed: () => _deleteTodo(index),
+                return SlideTransition(
+                  position: _offsetAnimation,
+                  child: Card(
+                    margin:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    child: ListTile(
+                      title: Text(_todos[index].title),
+                      subtitle: Text(
+                          'Due: ${DateFormat('yyyy-MM-dd – kk:mm').format(_todos[index].dueDateTime)}'),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.delete),
+                        onPressed: () => _deleteTodo(index),
+                      ),
                     ),
                   ),
                 );
@@ -135,4 +208,11 @@ class _TodoListScreenState extends State<TodoListScreen> {
       ),
     );
   }
+}
+
+class TodoItem {
+  final String title;
+  final DateTime dueDateTime;
+
+  TodoItem(this.title, this.dueDateTime);
 }
